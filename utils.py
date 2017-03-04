@@ -1,8 +1,9 @@
 import math
 import time
-import sys
-import bisect
+import cPickle as pickle
 import numpy as np
+
+seconds_an_hour = 3600
 
 
 def sigmoid(x):
@@ -12,43 +13,49 @@ def sigmoid(x):
         return math.exp(x - np.logaddexp(x, 0))
 
 
-def load_check_ins(check_in_file, t=6):
-    times = []
-    users = []
-    axis_xs = []
-    axis_ys = []
-    locations = []
-    S = []
+def load_check_ins(check_in_file, h=6):
+    check_ins = {}
+    coordinates = {}
     L = {}
+    S = []
+    interval = h * seconds_an_hour
     for line in check_in_file:
         params = line.strip().split()
-        users.append(int(params[0]))
-        times.append(time.mktime(time.strptime(params[1], '%Y-%m-%dT%H:%M:%SZ')))
-        axis_xs.append(float(params[2]))
-        axis_ys.append(float(params[3]))
-        locations.append(int(params[4]))
-    interval = compute_interval(times, t)
-    for i in range(len(users)):
-        u_id = users[i]
-        l_id = locations[i]
-        t_index = bisect.bisect(interval, times[i]) - 1
-        S.append((u_id, t_index, l_id))
+        u_id = int(params[0])
+        t = time.mktime(time.strptime(params[1], '%Y-%m-%dT%H:%M:%SZ'))
+        axis_xs = float(params[2])
+        axis_ys = float(params[3])
+        loc_id = int(params[4])
+        coordinates[loc_id] = (axis_xs, axis_ys)
+        if u_id not in check_ins:
+            check_ins[u_id] = []
+        check_ins[u_id].append((t, loc_id))
+    for u_id in check_ins:
+        check_ins[u_id].reverse()
         if u_id not in L:
-            L[u_id] = [[] for i in range(t)]
-        try:
-            L[u_id][t_index].append(l_id)
-        except IndexError:
-            print t_index
+            L[u_id] = {}
+        t_index = 0
+        infimum = -1
+        for i in range(len(check_ins[u_id])):
+            t = check_ins[u_id][i][0]
+            if infimum == -1:
+                infimum = t
+            if t - infimum > interval:
+                t_index += 1
+                infimum = t
+            if t_index not in L[u_id]:
+                L[u_id][t_index] = []
+            L[u_id][t_index].append(check_ins[u_id][i][1])
+    for u_id in L:
+        for t_index in L[u_id]:
+            for loc_id in L[u_id][t_index]:
+                S.append((u_id, t_index, loc_id))
     return S, L
 
-
-def compute_interval(times, t):
-    max_stamp = 0
-    min_stamp = sys.maxint
-    for i in range(len(times)):
-        timestamp = times[i]
-        max_stamp = max(max_stamp, timestamp)
-        min_stamp = min(min_stamp, timestamp)
-    in_l = (max_stamp - min_stamp) / 6
-    time_interval = [min_stamp + in_l*i for i in range(t+1)]
-    return time_interval
+if __name__ == '__main__':
+    with open('datasets/Gowalla/Gowalla_totalCheckins.txt') as f:
+        S, L = load_check_ins(f)
+    with open('data/S', 'w+') as f:
+        pickle.dump(S, f)
+    with open('data/L', 'w+') as f:
+        pickle.dump(L, f)
